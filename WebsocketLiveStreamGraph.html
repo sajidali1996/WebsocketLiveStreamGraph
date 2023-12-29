@@ -1,0 +1,156 @@
+<!DOCTYPE HTML>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebSocket Client</title>
+    <script type="text/javascript" src="https://cdn.canvasjs.com/canvasjs.min.js"></script>
+    <style>
+        body, html {
+            height: 100%;
+            margin: 0;
+        }
+        #chartContainer {
+            height: 80%; /* Adjust the height as needed */
+            width: 100%;
+        }
+        .checkbox-container {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <label for="ipAddress">Enter WebSocket Server IP:</label>
+    <input type="text" id="ipAddress" placeholder="Enter IP address" />
+    
+    <label for="seriesNames">Enter Series Names (comma-separated):</label>
+    <input type="text" id="seriesNames" placeholder="Enter series names" />
+    
+    <button onclick="connectWebSocket()">Connect</button>
+
+    <div id="chartContainer"></div>
+    
+    <div class="checkbox-container" id="legendContainer"></div>
+
+    <script type="text/javascript">
+        let socket;
+        const chart = new CanvasJS.Chart("chartContainer", {
+            title: {
+                text: "Live Data"
+            },
+            axisX: {
+                title: "Time",
+                valueFormatString: "HH:mm:ss",
+                labelWrap: true,
+                labelAutoFit: true,
+                intervalType: "second",
+                interval: 1
+            },
+            axisY: {
+                title: "Values",
+                includeZero: true, // Include zero on the y-axis
+                viewportAutoFit: true // Automatically fit the y-axis after every update
+            },
+            legend: {
+                cursor: "pointer",
+                verticalAlign: "top",
+                horizontalAlign: "center",
+                dockInsidePlotArea: true,
+            },
+            data: [] // Data arrays will be added dynamically
+        });
+
+        function connectWebSocket() {
+            const ipAddress = document.getElementById("ipAddress").value;
+            const seriesNamesInput = document.getElementById("seriesNames").value;
+            const seriesNames = seriesNamesInput.split(',').map(name => name.trim());
+
+            // Dynamically create data arrays and configure chart based on seriesNames
+            for (let i = 0; i < seriesNames.length; i++) {
+                const dataPoints = [];
+                chart.options.data.push({
+                    type: "area",
+                    name: seriesNames[i],
+                    markerSize: 0,
+                    color: getRandomColor(), // Function to get a random color
+                    fillOpacity: 0.3,
+                    showInLegend: true,
+                    visible: true,
+                    dataPoints: dataPoints
+                });
+
+                // Create checkboxes for each series
+                const legendContainer = document.getElementById("legendContainer");
+                const checkbox = document.createElement("input");
+                checkbox.type = "checkbox";
+                checkbox.id = `toggle${seriesNames[i]}`;
+                checkbox.checked = true;
+                checkbox.addEventListener("change", function() {
+                    chart.options.data[i].visible = this.checked;
+                    chart.render();
+                });
+
+                const label = document.createElement("label");
+                label.appendChild(checkbox);
+                label.appendChild(document.createTextNode(` ${seriesNames[i]}`));
+                legendContainer.appendChild(label);
+
+                // Save the dataPoints array to the chart for later use
+                chart.options.data[i].dataPointsArray = dataPoints;
+            }
+
+            socket = new WebSocket(`ws://${ipAddress}:3000`);
+            
+            socket.onmessage = (event) => {
+                const message = document.createElement('li');
+                message.textContent = event.data;
+                let mydata = message.textContent.trim();
+
+                const dataObject = JSON.parse(mydata);
+
+                for (let i = 0; i < seriesNames.length; i++) {
+                    const value = extractValueByName(dataObject, seriesNames[i]);
+
+                    if (value !== undefined) {
+                        chart.options.data[i].dataPointsArray.push({ x: new Date(), y: value });
+
+                        if (chart.options.data[i].dataPointsArray.length > 10) {
+                            chart.options.data[i].dataPointsArray.shift();
+                        }
+                    } else {
+                        console.log(`${seriesNames[i]} is undefined`);
+                    }
+                }
+
+                chart.render();
+            };
+        }
+
+        function extractValueByName(data, name) {
+            if (data.hasOwnProperty(name)) {
+                return data[name];
+            } else {
+                console.log(`Property '${name}' not found in the data.`);
+                return undefined;
+            }
+        }
+
+        function getRandomColor() {
+            const letters = '0123456789ABCDEF';
+            let color;
+            do {
+                color = '#';
+                for (let i = 0; i < 6; i++) {
+                    color += letters[Math.floor(Math.random() * 16)];
+                }
+            } while (isColorUsed(color));
+            return color;
+        }
+
+        function isColorUsed(color) {
+            // Check if the color is already used in the chart
+            return chart.options.data.some(series => series.color === color);
+        }
+    </script>
+</body>
+</html>
